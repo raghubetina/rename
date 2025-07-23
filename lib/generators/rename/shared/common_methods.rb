@@ -28,10 +28,13 @@ module CommonMethods
   end
 
   def prepare_app_vars
-    @new_key         = new_name.gsub(/\W/, '_')
     @old_module_name = app_parent
     @old_dir         = File.basename(Dir.getwd)
-    @new_module_name = @new_key.squeeze('_').camelize
+    @old_app_name    = detect_app_name || @old_module_name.underscore
+
+    @new_app_name    = new_name.parameterize(separator: '_').gsub('-', '_')
+    @new_module_name = @new_app_name.camelize
+    @new_key         = @new_app_name
     @new_dir         = new_name.gsub(/[&%*@()!{}\[\]'\\\/"]+/, '')
     @new_path        = Rails.root.to_s.split('/')[0...-1].push(@new_dir).join('/')
   end
@@ -56,32 +59,50 @@ module CommonMethods
   def apply_new_module_name
     in_root do
       puts 'Search and replace exact module name...'
-      Dir['*', 'config/**/**/*.rb', '.{rvmrc}'].each do |file|
-        # file = File.join(Dir.pwd, file)
-        replace_into_file(file, /(#{@old_module_name}*)/m, @new_module_name)
+      Dir['*', 'config/**/**/*.{rb,yml}', '.{rvmrc}', 'app/views/pwa/*.json.erb'].each do |file|
+        replace_into_file(file, /#{@old_module_name}/, @new_module_name)
       end
       #Application layout
       %w(erb haml slim).each do |ext|
         replace_into_file("app/views/layouts/application.html.#{ext}", /#{@old_module_name}/, @new_module_name)
+        replace_into_file("app/views/layouts/application.html.#{ext}", /#{@old_module_name.underscore.humanize}/, @new_module_name.underscore.humanize)
       end
       #Readme
       %w(md markdown mdown mkdn).each do |ext|
         replace_into_file("README.#{ext}", /#{@old_module_name}/, @new_module_name)
       end
 
-      puts 'Search and replace underscore seperated module name in files...'
+      puts 'Search and replace underscore separated module name in files...'
       #session key
-      replace_into_file('config/initializers/session_store.rb', /(('|")_.*_session('|"))/i, "'_#{@new_key}_session'")
+      safe_replace_into_file('config/initializers/session_store.rb', /(('|")_.*_session('|"))/i, "'_#{@new_key}_session'")
       #database
-      replace_into_file('config/database.yml', /#{@old_module_name.underscore}/i, @new_name.underscore)
+      replace_into_file('config/database.yml', /#{@old_app_name}/i, @new_app_name)
+      replace_into_file('config/database.yml', /#{@old_app_name}_(production|development|test)(_cache|_queue|_cable)?/, "#{@new_app_name}_\\1\\2")
+      replace_into_file('config/database.yml', /#{@old_app_name.upcase}_DATABASE_PASSWORD/, "#{@new_app_name.upcase}_DATABASE_PASSWORD")
       #Channel and job queue
       %w(config/cable.yml config/environments/production.rb).each do |file|
-        replace_into_file(file, /#{@old_module_name.underscore}_production/, "#{@new_module_name.underscore}_production")
+        replace_into_file(file, /#{@old_app_name}_production/, "#{@new_app_name}_production")
       end
       # package.json name entry
       old_package_name_regex = /\Wname\W *: *\W(?<name>[-_\p{Alnum}]+)\W *, */i
-      new_package_name       = %("name":"#{@new_module_name.underscore}",)
+      new_package_name       = %("name":"#{@new_app_name}",)
       replace_into_file('package.json', old_package_name_regex, new_package_name)
+
+
+      # Rails 8 specific files
+      # Kamal deployment configuration
+      safe_replace_into_file('config/deploy.yml', /service: #{@old_app_name}/, "service: #{@new_app_name}")
+      safe_replace_into_file('config/deploy.yml', /image: (.+)\/#{@old_app_name}/, "image: \\1/#{@new_app_name}")
+      safe_replace_into_file('config/deploy.yml', /"#{@old_app_name}_/, "\"#{@new_app_name}_")
+      safe_replace_into_file('config/deploy.yml', /#{@old_app_name}-db/, "#{@new_app_name}-db")
+
+      # PWA manifest
+      safe_replace_into_file('app/views/pwa/manifest.json.erb', /"name": "#{@old_module_name}"/, "\"name\": \"#{@new_module_name}\"")
+      safe_replace_into_file('app/views/pwa/manifest.json.erb', /"description": "#{@old_module_name}/, "\"description\": \"#{@new_module_name}")
+
+      # Dockerfile
+      safe_replace_into_file('Dockerfile', /#{@old_module_name}/, @new_module_name)
+      safe_replace_into_file('Dockerfile', /#{@old_app_name}/, @new_app_name)
     end
   end
 
@@ -89,6 +110,22 @@ module CommonMethods
 
   def reserved_names
     @reserved_names = %w[application destroy benchmarker profiler plugin runner test]
+  end
+
+  def detect_app_name
+    return nil unless file_exist?('config/database.yml')
+
+    database_content = File.read('config/database.yml')
+
+    if match = database_content.match(/^\s*database:\s*(\w+)_development/m)
+      app_name_candidate = match[1]
+
+      if app_name_candidate.camelize == @old_module_name
+        return app_name_candidate
+      end
+    end
+
+    nil
   end
 
   def file_exist?(name)
@@ -128,5 +165,10 @@ module CommonMethods
     rescue Exception => ex
       puts "Error: #{ex.message}"
     end
+  end
+
+  def safe_replace_into_file(file, search_exp, replace)
+    return unless file_exist?(file) && !File.directory?(file)
+    replace_into_file(file, search_exp, replace)
   end
 end

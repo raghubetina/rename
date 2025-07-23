@@ -2,7 +2,7 @@
 
 This gem allows you to rename your Rails application by using a single command.
 
-Tested up to Ruby 3.2.2 and Rails 7.0.8
+Tested up to Ruby 3.4.5 and Rails 8.0.2
 
 ## Installation
 
@@ -41,18 +41,24 @@ Search and replace exact module name to...
   config/initializers/permissions_policy.rb
   config/puma.rb
   config/routes.rb
+  config/deploy.yml (Rails 8)
   app/views/layouts/application.html.erb
   app/views/layouts/application.html.haml
   app/views/layouts/application.html.slim
+  app/views/pwa/manifest.json.erb (Rails 8)
   README.md
   README.markdown
   README.mdown
   README.mkdn
+  Dockerfile (if present)
 Search and replace underscore seperated module name to...
-  config/initializers/session_store.rb
+  config/initializers/session_store.rb (if present)
   config/database.yml
+  config/database.yml (Rails 8 multi-db: cache, queue, cable)
+  config/database.yml (environment variables)
   config/cable.yml
   config/environments/production.rb
+  config/deploy.yml (Rails 8 Kamal service names)
   package.json
 Removing references...
   .idea
