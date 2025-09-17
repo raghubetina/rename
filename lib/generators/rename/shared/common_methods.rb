@@ -32,6 +32,10 @@ module CommonMethods
     @old_dir         = File.basename(Dir.getwd)
     @old_app_name    = detect_app_name || @old_module_name.underscore
 
+    # Normalize old directory name using ActiveSupport to handle hyphens
+    # If the directory has hyphens, the database name would have underscores
+    @old_app_name_from_dir = @old_dir.parameterize(separator: '_')
+
     @new_app_name    = new_name.parameterize(separator: '_').gsub('-', '_')
     @new_module_name = @new_app_name.camelize
     @new_key         = @new_app_name
@@ -76,12 +80,17 @@ module CommonMethods
       #session key
       safe_replace_into_file('config/initializers/session_store.rb', /(('|")_.*_session('|"))/i, "'_#{@new_key}_session'")
       #database
+      # Try both the detected app name and the directory-based name (with underscores)
       replace_into_file('config/database.yml', /#{@old_app_name}/i, @new_app_name)
+      replace_into_file('config/database.yml', /#{@old_app_name_from_dir}/i, @new_app_name) if @old_app_name != @old_app_name_from_dir
       replace_into_file('config/database.yml', /#{@old_app_name}_(production|development|test)(_cache|_queue|_cable)?/, "#{@new_app_name}_\\1\\2")
+      replace_into_file('config/database.yml', /#{@old_app_name_from_dir}_(production|development|test)(_cache|_queue|_cable)?/, "#{@new_app_name}_\\1\\2") if @old_app_name != @old_app_name_from_dir
       replace_into_file('config/database.yml', /#{@old_app_name.upcase}_DATABASE_PASSWORD/, "#{@new_app_name.upcase}_DATABASE_PASSWORD")
+      replace_into_file('config/database.yml', /#{@old_app_name_from_dir.upcase}_DATABASE_PASSWORD/, "#{@new_app_name.upcase}_DATABASE_PASSWORD") if @old_app_name != @old_app_name_from_dir
       #Channel and job queue
       %w(config/cable.yml config/environments/production.rb).each do |file|
         replace_into_file(file, /#{@old_app_name}_production/, "#{@new_app_name}_production")
+        replace_into_file(file, /#{@old_app_name_from_dir}_production/, "#{@new_app_name}_production") if @old_app_name != @old_app_name_from_dir
       end
       # package.json name entry
       old_package_name_regex = /\Wname\W *: *\W(?<name>[-_\p{Alnum}]+)\W *, */i
@@ -92,9 +101,13 @@ module CommonMethods
       # Rails 8 specific files
       # Kamal deployment configuration
       safe_replace_into_file('config/deploy.yml', /service: #{@old_app_name}/, "service: #{@new_app_name}")
+      safe_replace_into_file('config/deploy.yml', /service: #{@old_app_name_from_dir}/, "service: #{@new_app_name}") if @old_app_name != @old_app_name_from_dir
       safe_replace_into_file('config/deploy.yml', /image: (.+)\/#{@old_app_name}/, "image: \\1/#{@new_app_name}")
+      safe_replace_into_file('config/deploy.yml', /image: (.+)\/#{@old_app_name_from_dir}/, "image: \\1/#{@new_app_name}") if @old_app_name != @old_app_name_from_dir
       safe_replace_into_file('config/deploy.yml', /"#{@old_app_name}_/, "\"#{@new_app_name}_")
+      safe_replace_into_file('config/deploy.yml', /"#{@old_app_name_from_dir}_/, "\"#{@new_app_name}_") if @old_app_name != @old_app_name_from_dir
       safe_replace_into_file('config/deploy.yml', /#{@old_app_name}-db/, "#{@new_app_name}-db")
+      safe_replace_into_file('config/deploy.yml', /#{@old_app_name_from_dir}-db/, "#{@new_app_name}-db") if @old_app_name != @old_app_name_from_dir
 
       # PWA manifest
       safe_replace_into_file('app/views/pwa/manifest.json.erb', /"name": "#{@old_module_name}"/, "\"name\": \"#{@new_module_name}\"")
